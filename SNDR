@@ -1,0 +1,99 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Parameters
+B = 7  # Number of bits
+M = 2048  # PSD points
+C = 113
+Fs = 1e9  # Sampling frequency in Hz
+Fin = Fs * C / M
+L = M  # Assuming L is the signal length
+A = 1
+
+# Frequency bin check
+k = int(((Fs / 2 - Fin) * M) / Fs)
+if k != ((Fs / 2 - Fin) * M) / Fs:
+    print("Your Fin is not in the frequency bin")
+    exit()
+
+# Time and frequency vectors
+t = np.arange(1, L + 1) / Fs
+f = np.linspace(0, Fs / 2, L // 2 + 1)
+
+# Quantization noise
+bits = 7
+delta = 2 / (2**bits - 1)
+noise_sigma = delta**2 / 12
+
+# Signal generation
+xb = A * np.cos(2 * np.pi * Fin * t) + noise_sigma * np.random.randn(len(t))
+xdft = np.fft.fft(xb)[: L // 2 + 1]
+psdx = (1 / (Fs * L)) * np.abs(xdft) ** 2
+psdx[1:-1] *= 2
+
+peak_psd = np.max(10 * np.log10(psdx))  # Peak in dB
+noise_floor = np.mean(10 * np.log10(psdx[1:]))  # Exclude DC for noise floor (in dB)
+snr = peak_psd - noise_floor  # SNR in dB
+
+# Plot the original signal x in the time domain
+plt.figure()
+plt.plot(t[:100] * 1e9, xb[:100])  # Plot a subset of 100 points
+plt.grid(True)
+plt.title("Input Signal")
+plt.xlabel("Time (ns)")
+plt.ylabel("Amplitude")
+plt.legend()
+plt.show()
+
+# Plotting input signal PSD
+plt.figure()
+plt.plot(f / Fs, 10 * np.log10(psdx))  # Convert to dB scale
+plt.grid(True)
+plt.title("Power Spectrum Density of Input Signal")
+plt.xlabel("Normalized frequency")
+plt.ylabel("Power/Frequency (dB/Hz)")
+plt.text(0.3, peak_psd - 10, f"SNR = {snr:.2f} dB", color="red", fontsize = 12)
+plt.show()
+
+# Sampling and Bitwise Processing
+R = np.sin(2 * np.pi * Fin * t)
+B_matrix = np.zeros((L, B))
+G = 1  # Initial gain
+
+for n in range(1, B + 1):
+    B_matrix[:, n - 1] = np.round(R / delta) * delta
+    R = G * (R - B_matrix[:, n - 1])
+
+# Digital background calibration
+an = (1 / 2) ** (np.arange(B))
+xa = B_matrix @ an
+
+plt.figure()
+plt.plot(t[:100] * 1e9, xa[:100])  # Plot a subset for clarity
+plt.scatter(t[:100] * 1e9, xa[:100], color="red", s = 10)
+plt.grid(True)
+plt.title("Quantized Signal with Sampling Points Marked")
+plt.xlabel("Time (ns)")
+plt.ylabel("Amplitude")
+plt.show()
+
+xa_noisy = xa + noise_sigma * np.random.randn(len(xa))
+
+# Compute the PSD of Xr with FFT
+xdft_xa = np.fft.fft(xa_noisy)[: L // 2 + 1]
+psdx_xa = (1 / (Fs * L)) * np.abs(xdft_xa) ** 2
+psdx_xa[1:-1] *= 2  # Double the energy of non-DC and non-Nyquist components
+
+peak_psd = np.max(10 * np.log10(psdx_xa))  # Peak in dB
+noise_floor = np.mean(10 * np.log10(psdx_xa[1:]))  # Exclude DC for noise floor (in dB)
+snr = peak_psd - noise_floor  # SNR in dB
+
+# Plotting the PSD of Xr
+plt.figure()
+plt.plot(f / Fs, 10 * np.log10(psdx_xa))  # Convert to dB scale
+plt.grid(True)
+plt.title("Power Spectrum Density of Quantized Signal")
+plt.xlabel("Normalized frequency")
+plt.ylabel("Power/Frequency (dB/Hz)")
+plt.text(0.3, peak_psd - 10, f"SNR = {snr:.2f} dB", color="red", fontsize=12)
+plt.show()
